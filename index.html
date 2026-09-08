@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de Códigos QR para Imprimir</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --accent:#2563eb; --text:#1e293b; --muted:#64748b; }
+  * { box-sizing:border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:var(--bg); color:var(--text); }
+  header { background:var(--text); color:white; padding:20px; text-align:center; }
+  header h1 { margin:0; font-size:1.6rem; }
+  header p { margin:6px 0 0; color:#cbd5e1; }
+  main { max-width:1000px; margin:20px auto; padding:0 16px 40px; display:grid; grid-template-columns:380px 1fr; gap:20px; }
+  @media (max-width:800px){ main{grid-template-columns:1fr;} }
+  .card { background:var(--card); border-radius:12px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,.08); }
+  label { font-weight:600; font-size:.9rem; display:block; margin:14px 0 6px; }
+  input[type=text], input[type=url], textarea, select { width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:1rem; }
+  textarea { resize:vertical; min-height:80px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .colors { display:flex; gap:10px; }
+  .colors div { flex:1; }
+  input[type=color]{ width:100%; height:40px; border:none; padding:0; background:none; cursor:pointer; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:12px; font-size:1rem; font-weight:600; }
+  .btn-primary { background:var(--accent); color:white; width:100%; margin-top:16px; }
+  .btn-primary:hover{ background:#1d4ed8; }
+  .btn-secondary { background:#e2e8f0; color:var(--text); flex:1; }
+  .btn-group { display:flex; gap:10px; margin-top:12px; }
+  .preview { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:300px; }
+  #qr-card { padding:20px; background:white; border:2px dashed #cbd5e1; border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:border .15s; }
+  #qr-title { font-weight:800; font-size:1.25rem; text-align:center; margin-bottom:12px; word-break:break-word; max-width:320px; color:#0f172a; }
+  #qr-title:empty { display:none; }
+  #qrcode { display:flex; align-items:center; justify-content:center; }
+  #qrcode img, #qrcode canvas { display:block; }
+  #qr-label { margin-top:12px; font-size:.9rem; color:var(--muted); word-break:break-all; text-align:center; max-width:320px; }
+  .hint { font-size:.85rem; color:var(--muted); }
+  .tabs { display:flex; gap:8px; margin-bottom:10px; }
+  .tabs button { flex:1; background:#e2e8f0; }
+  .tabs button.active { background:var(--text); color:white; }
+  /* Hoja de impresión */
+  #sheet { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:16px; margin-top:16px; }
+  .qr-item { background:white; border:1px solid #e2e8f0; border-radius:10px; padding:12px; text-align:center; position:relative; }
+  .qr-item img { max-width:100%; }
+  .qr-item p { font-size:.8rem; word-break:break-all; margin:8px 0 0; }
+  .qr-item .del { position:absolute; top:6px; right:6px; background:#fee2e2; color:#b91c1c; border-radius:6px; padding:4px 8px; font-size:.8rem; }
+  .actions { margin-top:20px; }
+
+  @media print {
+    header, .no-print { display:none !important; }
+    body { background:white; }
+    main { display:block; max-width:100%; margin:0; padding:0; }
+    .card.config { display:none !important; }
+    .card { box-shadow:none; border:none; }
+    #sheet { grid-template-columns:repeat(2,1fr); gap:24px; }
+    .qr-item { break-inside:avoid; border:1px solid #000; }
+    .qr-item .del { display:none; }
+    #single-print-area { text-align:center; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔳 Generador de Códigos QR</h1>
+  <p>Pega tu link, genera el QR y descárgalo o imprímelo en alta calidad</p>
+</header>
+
+<main>
+  <section class="card config no-print">
+    <div class="tabs">
+      <button id="tab-single" class="active" onclick="switchTab('single')">Un QR</button>
+      <button id="tab-batch" onclick="switchTab('batch')">Varios / Hoja</button>
+    </div>
+
+    <div id="panel-single">
+      <label for="url">Link / Texto</label>
+      <input type="url" id="url" placeholder="https://ejemplo.com/mi-link" value="https://google.com">
+      <label for="qrTitle">Título (se muestra en la previsualización e impresión)</label>
+      <input type="text" id="qrTitle" placeholder="Ej: ESCANÉAME - Menú del día" value="ESCANÉAME">
+      <p class="hint">Tip: incluye https:// para que el QR abra directo al escanear.</p>
+    </div>
+
+    <div id="panel-batch" style="display:none">
+      <label for="batch">Un link por línea (puedes poner Título | link)</label>
+      <textarea id="batch" placeholder="Mi Menú | https://link1.com&#10;Promo | https://link2.com&#10;https://link3.com"></textarea>
+      <button class="btn-primary" onclick="addBatch()">➕ Agregar hoja para imprimir</button>
+    </div>
+
+    <label for="size">Tamaño (calidad impresión)</label>
+    <select id="size">
+      <option value="256">Mediano - 256px (pantalla)</option>
+      <option value="512" selected>Grande - 512px (impresión buena)</option>
+      <option value="1024">Extra - 1024px (impresión alta calidad Recomendado)</option>
+      <option value="2048">Máxima - 2048px (póster / lona)</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label for="correction">Corrección errores</label>
+        <select id="correction">
+          <option value="1">L - Baja (más denso)</option>
+          <option value="0">M - Media</option>
+          <option value="2" selected>H - Alta (recomendado impresión)</option>
+          <option value="3">Q - Muy alta</option>
+        </select>
+      </div>
+      <div>
+        <label for="showLabel">Mostrar link debajo</label>
+        <select id="showLabel">
+          <option value="yes" selected>Sí</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Colores</label>
+    <div class="colors">
+      <div>
+        <input type="color" id="fg" value="#000000">
+        <small>QR</small>
+      </div>
+      <div>
+        <input type="color" id="bg" value="#ffffff">
+        <small>Fondo</small>
+      </div>
+    </div>
+
+    <label>Borde del QR (para impresión / cartel)</label>
+    <div class="row">
+      <div>
+        <select id="borderStyle" title="Estilo de borde">
+          <option value="none">Sin borde</option>
+          <option value="solid" selected>Borde sólido</option>
+          <option value="rounded">Borde redondeado</option>
+          <option value="double">Borde doble</option>
+        </select>
+      </div>
+      <div>
+        <select id="borderWidth" title="Grosor">
+          <option value="2">Fino - 2px</option>
+          <option value="4" selected>Normal - 4px</option>
+          <option value="8">Grueso - 8px</option>
+          <option value="12">Extra - 12px</option>
+        </select>
+      </div>
+    </div>
+    <div class="colors" style="margin-top:10px">
+      <div>
+        <input type="color" id="borderColor" value="#2563eb">
+        <small>Color borde</small>
+      </div>
+      <div>
+        <input type="color" id="titleColor" value="#0f172a">
+        <small>Color título</small>
+      </div>
+    </div>
+
+    <div id="single-controls">
+      <button class="btn-primary" onclick="generateQR()">Generar QR</button>
+      <div class="btn-group">
+        <button class="btn-secondary" onclick="downloadQR()">⬇ Descargar PNG</button>
+        <button class="btn-secondary" onclick="printSingle()">🖨 Imprimir</button>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn-secondary" onclick="printSheet()">🖨 Imprimir hoja completa</button>
+      <button class="btn-secondary" onclick="clearSheet()">🗑 Limpiar hoja</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2 style="margin:0 0 10px">Vista previa</h2>
+      <div class="preview" id="single-print-area">
+        <div id="qr-card">
+          <div id="qr-title"></div>
+          <div id="qrcode"></div>
+          <div id="qr-label"></div>
+        </div>
+      </div>
+      <div class="actions no-print btn-group">
+        <button class="btn-secondary" onclick="addCurrentToSheet()">➕ Añadir este QR a la hoja</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h2 style="margin:0">Hoja para imprimir (<span id="count">0</span>)</h2>
+      <p class="hint no-print">Agrega varios QR aquí y luego pulsa “Imprimir hoja completa”. Ideal para pegar en paredes, mesas, productos.</p>
+      <div id="sheet"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+let currentText = '';
+let mode = 'single';
+
+function switchTab(t){
+  mode = t;
+  document.getElementById('tab-single').classList.toggle('active', t==='single');
+  document.getElementById('tab-batch').classList.toggle('active', t==='batch');
+  document.getElementById('panel-single').style.display = t==='single' ? 'block':'none';
+  document.getElementById('panel-batch').style.display = t==='batch' ? 'block':'none';
+  document.getElementById('single-controls').style.display = t==='single' ? 'block':'none';
+}
+
+function getOptions(sizeOverride){
+  const size = sizeOverride || parseInt(document.getElementById('size').value);
+  // qrcodejs: correctLevel 0=M,1=L,2=H,3=Q - el select ya usa esos valores
+  const levelMap = { '1': QRCode.CorrectLevel.L, '0': QRCode.CorrectLevel.M, '3': QRCode.CorrectLevel.Q, '2': QRCode.CorrectLevel.H };
+  const corr = document.getElementById('correction').value;
+  return {
+    width: size, height: size,
+    colorDark: document.getElementById('fg').value,
+    colorLight: document.getElementById('bg').value,
+    correctLevel: levelMap[corr] ?? QRCode.CorrectLevel.H
+  };
+}
+
+function generateQR(){
+  const text = document.getElementById('url').value.trim();
+  if(!text){ alert('Pega un link primero'); return; }
+  currentText = text;
+  const title = document.getElementById('qrTitle').value.trim();
+  const box = document.getElementById('qrcode');
+  box.innerHTML = '';
+  // QR más chico en preview para que no se deforme, la descarga usa tamaño real
+  const previewSize = 220;
+  const opts = getOptions(previewSize);
+  new QRCode(box, Object.assign({ text }, opts));
+  // Título
+  const tEl = document.getElementById('qr-title');
+  tEl.textContent = title;
+  tEl.style.color = document.getElementById('titleColor').value;
+  // Link debajo
+  const show = document.getElementById('showLabel').value === 'yes';
+  document.getElementById('qr-label').textContent = show ? text : '';
+  applyBorderPreview();
+}
+
+function getBorderSettings(){
+  return {
+    style: document.getElementById('borderStyle').value,
+    width: parseInt(document.getElementById('borderWidth').value),
+    color: document.getElementById('borderColor').value
+  };
+}
+
+function applyBorderPreview(){
+  const card = document.getElementById('qr-card');
+  const b = getBorderSettings();
+  card.style.background = document.getElementById('bg').value;
+  if(b.style === 'none'){
+    card.style.border = '2px dashed #cbd5e1';
+    card.style.borderRadius = '12px';
+    card.style.outline = 'none';
+    card.style.padding = '20px';
+  } else if(b.style === 'solid'){
+    card.style.border = `${b.width}px solid ${b.color}`;
+    card.style.borderRadius = '0px';
+    card.style.outline = 'none';
+  } else if(b.style === 'rounded'){
+    card.style.border = `${b.width}px solid ${b.color}`;
+    card.style.borderRadius = '20px';
+    card.style.outline = 'none';
+  } else if(b.style === 'double'){
+    card.style.border = `${b.width}px solid ${b.color}`;
+    card.style.outline = `3px solid ${b.color}`;
+    card.style.outlineOffset = '6px';
+    card.style.borderRadius = '4px';
+  }
+}
+
+function getQRImage(){
+  const box = document.getElementById('qrcode');
+  const img = box.querySelector('img');
+  const canvas = box.querySelector('canvas');
+  if(img && img.src) return img.src;
+  if(canvas) return canvas.toDataURL('image/png');
+  return null;
+}
+
+function loadImg(src){
+  return new Promise((res, rej)=>{
+    const i = new Image();
+    i.onload = ()=>res(i);
+    i.onerror = rej;
+    i.src = src;
+  });
+}
+function wrapLines(ctx, text, maxW){
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = '';
+  // Si es un link largo sin espacios, córtalo por caracteres
+  if(words.length === 1 && ctx.measureText(text).width > maxW){
+    let cur = '';
+    for(const ch of text){
+      if(ctx.measureText(cur + ch).width > maxW){ lines.push(cur); cur = ch; }
+      else cur += ch;
+    }
+    if(cur) lines.push(cur);
+    return lines;
+  }
+  for(const w of words){
+    const t = line ? line + ' ' + w : w;
+    if(ctx.measureText(t).width > maxW && line){ lines.push(line); line = w; }
+    else line = t;
+  }
+  if(line) lines.push(line);
+  return lines;
+}
+
+// Genera PNG final con título + borde + QR + link (ideal para imprimir)
+async function buildCompositeDataURL(text, title){
+  const size = parseInt(document.getElementById('size').value);
+  const b = getBorderSettings();
+  const bg = document.getElementById('bg').value;
+  const titleColor = document.getElementById('titleColor').value;
+  const show = document.getElementById('showLabel').value === 'yes';
+  const qrSrc = await makeQRDataURL(text, size);
+  const qrImg = await loadImg(qrSrc);
+
+  const scale = size / 300;
+  let bw = b.style === 'none' ? 0 : Math.max(2, Math.round(b.width * scale));
+  const pad = Math.round(size * 0.08);
+  const gap = Math.round(size * 0.04);
+
+  const meas = document.createElement('canvas').getContext('2d');
+  const titleFont = Math.round(size * 0.085);
+  const labelFont = Math.round(size * 0.035);
+  meas.font = `800 ${titleFont}px system-ui, Arial`;
+  const titleLines = title ? wrapLines(meas, title, size) : [];
+  meas.font = `${labelFont}px system-ui, Arial`;
+  const labelLines = (show && text) ? wrapLines(meas, text, size) : [];
+
+  const titleH = titleLines.length ? titleLines.length * titleFont * 1.25 + gap : 0;
+  const labelH = labelLines.length ? labelLines.length * labelFont * 1.4 + gap : 0;
+  const extraDouble = (b.style === 'double') ? (10 + 3*2) : 0;
+
+  const W = size + pad*2 + bw*2 + extraDouble*2;
+  const H = size + pad*2 + bw*2 + extraDouble*2 + titleH + labelH;
+
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+
+  const rounded = (b.style === 'rounded');
+  // Fondo = color del borde (o blanco si sin borde)
+  ctx.fillStyle = b.style === 'none' ? '#ffffff' : b.color;
+  if(rounded && ctx.roundRect){ ctx.beginPath(); ctx.roundRect(0,0,W,H,40*scale); ctx.fill(); }
+  else ctx.fillRect(0,0,W,H);
+
+  // Borde doble: segundo marco blanco + línea interior
+  let inner = bw;
+  if(b.style === 'double'){
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(bw, bw, W-bw*2, H-bw*2);
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = Math.max(2, Math.round(3*scale/2));
+    const o = bw + 8;
+    ctx.strokeRect(o, o, W-o*2, H-o*2);
+    inner = bw + 10 + Math.max(2, Math.round(3*scale/2));
+  }
+  // Interior
+  ctx.fillStyle = bg;
+  if(rounded && ctx.roundRect){ ctx.beginPath(); ctx.roundRect(inner,inner,W-inner*2,H-inner*2,28*scale); ctx.fill(); }
+  else ctx.fillRect(inner, inner, W-inner*2, H-inner*2);
+
+  let y = inner + pad;
+  // Título
+  if(titleLines.length){
+    ctx.fillStyle = titleColor;
+    ctx.font = `800 ${titleFont}px system-ui, -apple-system, Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for(const ln of titleLines){ ctx.fillText(ln, W/2, y); y += titleFont*1.25; }
+    y += gap;
+  }
+  // QR
+  ctx.drawImage(qrImg, (W-size)/2, y, size, size);
+  y += size + gap;
+  // Link
+  if(labelLines.length){
+    ctx.fillStyle = '#64748b';
+    ctx.font = `${labelFont}px system-ui, Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for(const ln of labelLines){ ctx.fillText(ln, W/2, y); y += labelFont*1.4; }
+  }
+  return c.toDataURL('image/png');
+}
+
+async function downloadQR(){
+  const text = document.getElementById('url').value.trim();
+  if(!text){ alert('Genera el QR primero'); return; }
+  const title = document.getElementById('qrTitle').value.trim();
+  const btn = event?.target;
+  const old = btn ? btn.textContent : '';
+  if(btn) btn.textContent = '⏳ Generando...';
+  try{
+    const src = await buildCompositeDataURL(text, title);
+    const a = document.createElement('a');
+    a.href = src;
+    const safe = (title || 'qr').toLowerCase().replace(/[^a-z0-9áéíóúñ]+/gi,'-').slice(0,40);
+    a.download = safe + '-' + Date.now() + '.png';
+    a.click();
+  } finally { if(btn) btn.textContent = old; }
+}
+
+function printSingle(){
+  if(!currentText) generateQR();
+  // Oculta hoja temporalmente para imprimir solo el individual
+  document.getElementById('sheet').parentElement.style.display = 'none';
+  window.print();
+  document.getElementById('sheet').parentElement.style.display = '';
+}
+
+function printSheet(){
+  // Oculta preview individual, imprime solo hoja + el individual si quieres ambos: dejamos ambos visibles
+  window.print();
+}
+
+function makeQRDataURL(text, size){
+  return new Promise((resolve)=>{
+    const tmp = document.createElement('div');
+    new QRCode(tmp, Object.assign({ text }, getOptions(size)));
+    setTimeout(()=>{
+      const img = tmp.querySelector('img');
+      const canvas = tmp.querySelector('canvas');
+      if(img && img.src) resolve(img.src);
+      else if(canvas) resolve(canvas.toDataURL('image/png'));
+      else resolve(null);
+    }, 300);
+  });
+}
+
+function parseBatchLine(line){
+  // Formato: "Título | https://link"  o solo "https://link"
+  if(line.includes('|')){
+    const parts = line.split('|');
+    const urlPart = parts.pop().trim();
+    const titlePart = parts.join('|').trim();
+    return { title: titlePart, text: urlPart };
+  }
+  return { title: '', text: line.trim() };
+}
+
+async function addCurrentToSheet(){
+  const text = document.getElementById('url').value.trim();
+  if(!text){ alert('Pega un link primero'); return; }
+  const title = document.getElementById('qrTitle').value.trim();
+  await addToSheet(text, title);
+}
+
+async function addBatch(){
+  const lines = document.getElementById('batch').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length){ alert('Pega al menos un link'); return; }
+  for(const l of lines){
+    const { title, text } = parseBatchLine(l);
+    await addToSheet(text, title);
+  }
+  document.getElementById('batch').value = '';
+}
+
+async function addToSheet(text, titleOverride){
+  const show = document.getElementById('showLabel').value === 'yes';
+  const title = (titleOverride !== undefined) ? titleOverride : '';
+  const titleColor = document.getElementById('titleColor').value;
+  const b = getBorderSettings();
+  const src = await makeQRDataURL(text, 220);
+  const sheet = document.getElementById('sheet');
+  const div = document.createElement('div');
+  div.className = 'qr-item';
+  // Aplica mismo borde a la tarjeta de la hoja
+  if(b.style === 'none'){ div.style.border = '1px solid #e2e8f0'; div.style.outline = 'none'; }
+  else if(b.style === 'double'){ div.style.border = `${b.width}px solid ${b.color}`; div.style.outline = '3px solid '+b.color; div.style.outlineOffset = '4px'; }
+  else { div.style.border = `${b.width}px solid ${b.color}`; div.style.outline = 'none'; div.style.borderRadius = b.style==='rounded' ? '16px' : '6px'; }
+  div.innerHTML = `<button class="del no-print" onclick="this.parentElement.remove();updateCount()">✕</button>
+    ${title ? `<div style="font-weight:800;font-size:1.05rem;margin-bottom:8px;color:${titleColor};word-break:break-word;">${title.replace(/</g,'&lt;')}</div>` : ''}
+    <img src="${src}" alt="QR">
+    ${show ? `<p>${text.replace(/</g,'&lt;')}</p>` : ''}`;
+  // Click en imagen descarga ese QR CON título y borde incluidos
+  div.querySelector('img').title = 'Clic para descargar este QR con título y borde';
+  div.querySelector('img').style.cursor = 'pointer';
+  div.querySelector('img').onclick = async ()=>{
+    const full = await buildCompositeDataURL(text, title);
+    const a = document.createElement('a'); a.href = full; a.download = 'qr-'+Date.now()+'.png'; a.click();
+  };
+  sheet.appendChild(div);
+  updateCount();
+}
+
+function updateCount(){
+  document.getElementById('count').textContent = document.getElementById('sheet').children.length;
+}
+function clearSheet(){
+  if(!confirm('¿Borrar toda la hoja?')) return;
+  document.getElementById('sheet').innerHTML = '';
+  updateCount();
+}
+
+// Auto-generar al cargar y al cambiar opciones
+window.onload = generateQR;
+document.getElementById('url').addEventListener('input', ()=>{ clearTimeout(window._t); window._t=setTimeout(generateQR,500); });
+document.getElementById('qrTitle').addEventListener('input', ()=>{ clearTimeout(window._t2); window._t2=setTimeout(generateQR,500); });
+['size','correction','fg','bg','showLabel','borderStyle','borderWidth','borderColor','titleColor'].forEach(id=>document.getElementById(id).addEventListener('change', generateQR));
+['borderColor','titleColor','fg','bg'].forEach(id=>document.getElementById(id).addEventListener('input', generateQR));
+</script>
+</body>
+</html>
